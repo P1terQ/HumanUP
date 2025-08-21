@@ -1,0 +1,12 @@
+isaacgym*
+.ipynb_checkpoints/
+.vscode/
+*img
+*__pycache__*
+fbx/
+cmu_fbx_all/
+*zip
+*ipynb
+npy
+pkl
+*.nfs*
