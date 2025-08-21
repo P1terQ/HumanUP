@@ -34,10 +34,10 @@
 from legged_gym.envs.base.humanoid_config import HumanoidCfg, HumanoidCfgPPO
 
 
-class G1WaistRollHumanUPCfg(HumanoidCfg):
+class Go2RollUPCfg(HumanoidCfg):
     class env(HumanoidCfg.env):
         num_envs = 4096
-        num_actions = 23  # NOTE: the wrist dof is removed
+        num_actions = 12  # NOTE: the wrist dof is removed
         n_priv = 0
         n_proprio = 3 + 2 + 3 * num_actions  # NOTE
         n_priv_latent = 4 + 1 + 2 * num_actions + 3
@@ -59,8 +59,8 @@ class G1WaistRollHumanUPCfg(HumanoidCfg):
 
         normalize_obs = False#True
 
-        terminate_on_velocity = True
-        terminate_on_height = True
+        terminate_on_velocity =False# True
+        terminate_on_height = False#True
 
         no_symmetry_after_stand = True
 
@@ -68,58 +68,28 @@ class G1WaistRollHumanUPCfg(HumanoidCfg):
         mesh_type = "plane"
 
     class init_state(HumanoidCfg.init_state):
-        pos = [0, 0, 1.2]
+        pos = [0.0, 0.0, 0.42] # x,y,z [m]
         rot = [0.0, -0.707, 0.0, 0.707]  # up
-        default_joint_angles = {
-            # lower body (12 dof)
-            "left_hip_pitch_joint": -0.1,
-            "left_hip_roll_joint": 0.0,
-            "left_hip_yaw_joint": 0.0,
-            "left_knee_joint": 0.3,
-            "left_ankle_pitch_joint": -0.2,
-            "left_ankle_roll_joint": 0,
-            "right_hip_pitch_joint": -0.1,
-            "right_hip_roll_joint": 0.0,
-            "right_hip_yaw_joint": 0.0,
-            "right_knee_joint": 0.3,
-            "right_ankle_pitch_joint": -0.2,
-            "right_ankle_roll_joint": 0,
-            # waist (3 dof)
-            "waist_yaw_joint": 0.0,
-            "waist_roll_joint": 0.0,
-            "waist_pitch_joint": 0.0,  # -90 degrees
-            # upper body (14dof = 8 dof + 6 dof wrist)
-            "left_shoulder_pitch_joint": 0.0,
-            "left_shoulder_roll_joint": 0.0,
-            "left_shoulder_yaw_joint": 0.0,
-            "left_elbow_joint": 0.0,  #0.0,
-            "right_shoulder_pitch_joint": 0.0,
-            "right_shoulder_roll_joint": 0.0,
-            "right_shoulder_yaw_joint": 0.0,
-            "right_elbow_joint": 0.0,  #0.0,
-        }  # = target angles [rad] when action = 0.0
+        default_joint_angles = { # = target angles [rad] when action = 0.0
+            'FL_hip_joint': 0.1,   # [rad]
+            'RL_hip_joint': 0.1,   # [rad]
+            'FR_hip_joint': -0.1 ,  # [rad]
+            'RR_hip_joint': -0.1,   # [rad]
+
+            'FL_thigh_joint': 0.8,     # [rad]
+            'RL_thigh_joint': 1.,   # [rad]
+            'FR_thigh_joint': 0.8,     # [rad]
+            'RR_thigh_joint': 1.,   # [rad]
+
+            'FL_calf_joint': -1.5,   # [rad]
+            'RL_calf_joint': -1.5,    # [rad]
+            'FR_calf_joint': -1.5,  # [rad]
+            'RR_calf_joint': -1.5,    # [rad]
+        }
 
     class control(HumanoidCfg.control):
-        stiffness = {
-            "hip_yaw": 150,
-            "hip_roll": 150,
-            "hip_pitch": 200,
-            "knee": 200,
-            "ankle": 20,
-            "shoulder": 40,
-            "elbow": 40,
-            "waist": 200,
-        }  # [N*m/rad]
-        damping = {
-            "hip_yaw": 5,
-            "hip_roll": 5,
-            "hip_pitch": 5,
-            "knee": 5,
-            "ankle": 4,
-            "shoulder": 10,
-            "elbow": 10,
-            "waist": 5,
-        }  # [N*m/rad]  # [N*m*s/rad]
+        stiffness = {'joint': 40.0}  # [N*m/rad]
+        damping = {'joint': 1.0} 
 
         action_scale = 0.5
         decimation = 20
@@ -132,41 +102,42 @@ class G1WaistRollHumanUPCfg(HumanoidCfg):
         clip_actions = 5
 
     class asset(HumanoidCfg.asset):
-        file = "{LEGGED_GYM_ROOT_DIR}/resources/robots/g1_modified/g1_29dof_fixedwrist_custom_collision_with_head.urdf"
+        file = "{LEGGED_GYM_ROOT_DIR}/resources/robots/go2/urdf/go2.urdf"
+        flip_visual_attachments = True        # for both joint and link name
         # for both joint and link name
-        torso_name: str = "torso_link"  # humanoid pelvis part
-        chest_name: str = "torso_link"  # humanoid chest part
-        forehead_name: str = "head_link"  # humanoid head part
+        torso_name: str = "base"  # humanoid pelvis part
+        chest_name: str = "base"  # humanoid chest part
+        forehead_name: str = "base"  # humanoid head part
 
-        waist_name: str = "torso_joint"
+        waist_name: str = "base"
 
         # for link name
-        thigh_name: str = "hip_roll_link"
-        shank_name: str = "knee_link"
-        foot_name: str = "ankle_roll_link"  # foot_pitch is not used
-        upper_arm_name: str = "shoulder_roll_link"
-        lower_arm_name: str = "elbow_pitch_link"
-        hand_name: str = "hand"
+        thigh_name: str = "thigh"
+        shank_name: str = "calf"
+        foot_name: str = "foot"  # foot_pitch is not used
+        upper_arm_name: str = "hip"
+        lower_arm_name: str = "calf"
+        hand_name: str = "head"
 
         # for joint name
         hip_name: str = "hip"
-        hip_roll_name: str = "hip_roll_joint"
-        hip_yaw_name: str = "hip_yaw_joint"
-        hip_pitch_name: str = "hip_pitch_joint"
-        knee_name: str = "knee_link"
-        ankle_name: str = "ankle"
-        ankle_pitch_name: str = "ankle_pitch_joint"
-        shoulder_name: str = "shoulder"
-        shoulder_pitch_name: str = "shoulder_pitch_joint"
-        shoulder_roll_name: str = "shoulder_roll_joint"
-        shoulder_yaw_name: str = "shoulder_yaw_joint"
-        elbow_name: str = "elbow_pitch_joint"
+        hip_roll_name: str = "hip"
+        hip_yaw_name: str = "hip"
+        hip_pitch_name: str = "hip"
+        knee_name: str = "thigh"
+        ankle_name: str = "calf"
+        ankle_pitch_name: str = "calf"
+        shoulder_name: str = "calf"
+        shoulder_pitch_name: str = "calf"
+        shoulder_roll_name: str = "calf"
+        shoulder_yaw_name: str = "calf"
+        elbow_name: str = "calf"
 
-        feet_bodies = ["left_ankle_roll_link", "right_ankle_roll_link"]
+        feet_bodies = ["foot"]
         n_lower_body_dofs: int = 12
 
         penalize_contacts_on = ["shoulder", "elbow", "hip"]  # NOTE: now there is no penalization on contacts
-        terminate_after_contacts_on = ["torso_link"]  # NOTE: now there is no termination after contacts
+        terminate_after_contacts_on = []  # NOTE: now there is no termination after contacts
         dof_armature =[0.0,0.0,0.0,0.0,0.0,0.001]*2 + [0.0]* 3 + [0.0]*8
 
     class rewards(HumanoidCfg.rewards):
@@ -318,7 +289,7 @@ class G1WaistRollHumanUPCfg(HumanoidCfg):
             ang_vel_yaw = [-0.6, 0.6]  # min max [rad/s]
 
 
-class G1WaistRollHumanUPCfgPPO(HumanoidCfgPPO):
+class Go2RollUPCfgPPO(HumanoidCfgPPO):
     seed = 1
 
     class runner(HumanoidCfgPPO.runner):
@@ -339,7 +310,7 @@ class G1WaistRollHumanUPCfgPPO(HumanoidCfgPPO):
         resume_path = None  # updated from load_run and chkpt
 
     class policy(HumanoidCfgPPO.policy):
-        action_std = [0.3, 0.3, 0.3, 0.4, 0.2, 0.2] * 2 + [0.1] * 3 + [0.2] * 8  # NOTE: the wrist dof is removed
+        # action_std = [0.3, 0.3, 0.3, 0.4, 0.2, 0.2] * 2 + [0.1] * 3 + [0.2] * 8  # NOTE: the wrist dof is removed
         init_noise_std = 1.0
         action_std_curriculum = False
         action_std_curriculum_type = "sin"  # ["cos", "cos_step", "linear"]

@@ -82,7 +82,16 @@ def train(args):
 
 if __name__ == "__main__":
     args = get_args()
-    args.task = "go2up"
+    args.task = "go2roll_track" # 改这个就行
     args.proj_name = f"{args.task}"
-    args.num_envs = 1
+    args.num_envs = 4096
+    args.headless = True
+    if args.task == "go2roll_track" :
+        args.traj_name = "rollover_traj"
+    elif args.task == "go2_track":
+        args.traj_name = "getup_traj"
+    else:
+        print("no trajectory for this task")
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    args.exptid = current_time 
     train(args)

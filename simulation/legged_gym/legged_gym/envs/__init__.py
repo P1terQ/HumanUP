@@ -50,6 +50,15 @@ from .g1rolltrack.g1waistroll_track import G1WaistRollTrack
 
 from .go2.go2_up import Go2UP
 from .go2.go2_up_config import Go2UPCfg, Go2UPCfgPPO
+
+from .go2roll.go2roll_up import Go2RollUP
+from .go2roll.go2roll_up_config import Go2RollUPCfg, Go2RollUPCfgPPO
+
+from .go2_track.go2_track import Go2Track
+from .go2_track.go2_track_config import Go2TrackCfg, Go2TrackCfgPPO
+
+from .go2roll_track.go2roll_track import Go2RollTrack
+from .go2roll_track.go2roll_track_config import Go2RollTrackCfg, Go2RollTrackCfgPPO
 from legged_gym.gym_utils.task_registry import task_registry
 
 # ======================= environment registration =======================
@@ -63,3 +72,6 @@ task_registry.register("g1waistroll_up", G1WaistRollHumanUP, G1WaistRollHumanUPC
 task_registry.register("g1waistroll_track", G1WaistRollTrack, G1WaistRollTrackCfg(), G1WaistRollTrackCfgPPO())
 
 task_registry.register("go2up", Go2UP, Go2UPCfg(), Go2UPCfgPPO())
+task_registry.register("go2rollup", Go2RollUP, Go2RollUPCfg(), Go2RollUPCfgPPO())
+task_registry.register("go2_track", Go2Track, Go2TrackCfg(), Go2TrackCfgPPO())
+task_registry.register("go2roll_track", Go2RollTrack, Go2RollTrackCfg(), Go2RollTrackCfgPPO())

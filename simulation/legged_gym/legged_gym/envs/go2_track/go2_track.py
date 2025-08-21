@@ -31,6 +31,7 @@
 #
 # Copyright (c) 2024-2025 RoboVision Lab, UIUC. All rights reserved.
 
+
 from legged_gym import LEGGED_GYM_ROOT_DIR, envs
 from time import time
 from tqdm import tqdm
@@ -41,7 +42,7 @@ import cv2
 
 from isaacgym.torch_utils import *
 from isaacgym import gymtorch, gymapi, gymutil
-
+import pickle
 import torch
 from torch import Tensor
 from typing import Tuple, Dict
@@ -54,11 +55,10 @@ from legged_gym.gym_utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqr
 from legged_gym.gym_utils.helpers import class_to_dict
 from legged_gym.envs.base.humanoid import Humanoid
 from legged_gym.envs.base.humanoid_config import HumanoidCfg, HumanoidCfgPPO
-from legged_gym.envs.g1waist.g1waist_up_config import G1WaistHumanUPCfg
+from legged_gym.envs.g1track.g1waist_track_config import G1WaistTrackCfg
 
-
-class Go2UP(Humanoid):
-    def __init__(self, cfg: G1WaistHumanUPCfg, sim_params, physics_engine, sim_device, headless):
+class Go2Track(Humanoid):
+    def __init__(self, cfg: G1WaistTrackCfg, sim_params, physics_engine, sim_device, headless):
         """Parses the provided config file,
             calls create_sim() (which creates, simulation, terrain and environments),
             initilizes pytorch buffers used during training
@@ -89,19 +89,50 @@ class Go2UP(Humanoid):
 
         BaseTask.__init__(self, self.cfg, sim_params, physics_engine, sim_device, headless)
 
-        # self.initial_root_states = torch.tensor([ 8.6570e-03,  5.0515e-04,  5.6526e-02, -9.8234e-03,  4.9986e-01,
-        #     1.7525e-02, -8.6587e-01,  1.0610e-04, -4.5519e-05,  2.4261e-03,
-        #     5.6199e-03, -8.3706e-03, -1.0773e-03]).to(sim_device).repeat(self.num_envs, 1)
-        self.initial_root_states = torch.tensor([ 8.6570e-03,  5.0515e-04,  0.42, -9.8234e-03,  4.9986e-01,
+        self.initial_root_states = torch.tensor([ 8.6570e-03,  5.0515e-04,  5.6526e-02, -9.8234e-03,  4.9986e-01,
             1.7525e-02, -8.6587e-01,  1.0610e-04, -4.5519e-05,  2.4261e-03,
             5.6199e-03, -8.3706e-03, -1.0773e-03]).to(sim_device).repeat(self.num_envs, 1)
         self.initial_dof_pos = torch.tensor([0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.]).to(sim_device).repeat(self.num_envs, 1)
+
+        data = np.load("facingup_poses.npy")
+        training_idx = int(data.shape[0] * 0.5)
+        self.initial_root_states_all = torch.from_numpy(data[:training_idx, :13]).to(self.device)
+        self.initial_dof_pos_all = torch.from_numpy(data[:training_idx, 13:13+12]).to(self.device)
+        assert self.initial_root_states_all.shape[0] == self.initial_dof_pos_all.shape[0]
+        assert self.initial_dof_pos_all.shape[1] == self.num_dof
         
         self.left_dof_indices = torch.tensor([0, 1, 2, 3, 4, 5, 15, 16, 17, 18], device=self.device, dtype=torch.long)
         self.right_dof_indices = torch.tensor([6, 7, 8, 9, 10, 11, 19, 20, 21, 22], device=self.device, dtype=torch.long)
         self.waist_indices = torch.tensor([12, 13], device=self.device, dtype=torch.long)
         if not self.headless:
             self.set_camera(self.cfg.viewer.pos, self.cfg.viewer.lookat)
+
+        self.target_traj_length = int(8 / self.dt) + 1 # set the trajectory time as 8 second
+        if self.cfg.env.traj_name:
+            self.traj_name = self.cfg.env.traj_name
+            with open(f"../../logs/env_logs/{self.traj_name}/dof_pos_all.pkl", "rb") as f:
+                dof_pos_all = pickle.load(f).to(self.device)
+            with open(f"../../logs/env_logs/{self.traj_name}/head_height_all.pkl", "rb") as f:
+                head_height_all = pickle.load(f).to(self.device)
+            assert dof_pos_all.shape[0] == head_height_all.shape[0]
+            self.traj_length = dof_pos_all.shape[0]
+            self.phase_cnt = 0
+
+            def interpolate_data(data, target_length):
+                
+                traj_len = data.shape[0]
+                original_indices = np.linspace(0, 1, traj_len)
+                target_indices = np.linspace(0, 1, target_length)
+                interpolated_data = np.array([
+                    np.interp(target_indices, original_indices, data[:, col])
+                    for col in range(data.shape[1])
+                ]).T
+                
+                return torch.tensor(interpolated_data, dtype=torch.float32)
+        
+            self.dof_pos_all_interp = interpolate_data(dof_pos_all.cpu().numpy(), self.target_traj_length).to(self.device)
+            self.head_height_all_interp = interpolate_data(head_height_all.cpu().numpy(), self.target_traj_length).to(self.device)
+
         self._init_buffers()
         self._prepare_reward_function()
 
@@ -122,6 +153,7 @@ class Go2UP(Humanoid):
         self.init_done = True
         self.global_counter = 0
         self.total_env_steps_counter = 0
+
 
     def _init_buffers(self):
         super()._init_buffers()
@@ -167,6 +199,7 @@ class Go2UP(Humanoid):
         self.num_bodies = len(body_names)
         self.num_dofs = len(self.dof_names)
         feet_names = [s for s in body_names if self.cfg.asset.foot_name in s]
+        ankle_names = [s for s in body_names if self.cfg.asset.ankle_name in s]
         self.torso_idx = self.gym.find_asset_rigid_body_index(
             robot_asset, self.cfg.asset.torso_name
         )
@@ -200,7 +233,7 @@ class Go2UP(Humanoid):
 
         start_pose = gymapi.Transform()
         start_pose.p = gymapi.Vec3(*self.base_init_state[:3])
-        
+
         self._get_env_origins()
         spacing = self.cfg.env.env_spacing
         if self.cfg.terrain.mesh_type == "plane":
@@ -266,6 +299,13 @@ class Go2UP(Humanoid):
             self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(
                 self.envs[0], self.actor_handles[0], feet_names[i]
             )
+        self.ankle_indices = torch.zeros(
+            len(ankle_names), dtype=torch.long, device=self.device, requires_grad=False
+        )
+        for i in range(len(ankle_names)):
+            self.ankle_indices[i] = self.gym.find_actor_rigid_body_handle(
+                self.envs[0], self.actor_handles[0], ankle_names[i]
+            )
 
         self.penalized_contact_indices = torch.zeros(
             len(penalized_contact_names), dtype=torch.long, device=self.device, requires_grad=False
@@ -299,12 +339,11 @@ class Go2UP(Humanoid):
                     camera_handle, self.envs[i], gymapi.Vec3(*cam_pos), gymapi.Vec3(*0 * cam_pos)
                 )
 
-    def _reset_dofs(self, env_ids, dof_pos=None, dof_vel=None, set_act=True):
-        # self.dof_pos[env_ids] = dof_pos[env_ids] * torch_rand_float(
-        #     0.8, 1.2, (len(env_ids), self.num_dof), device=self.device
-        # )
+    def _reset_dofs(self, env_ids, dof_pos=None, dof_vel=None, set_act=True, random_idx=None):
+
         if dof_pos is None:
             self.dof_pos[env_ids] = self.initial_dof_pos[env_ids].clone()
+            self.dof_pos[env_ids] = self.initial_dof_pos_all[random_idx].clone()
         else:
             self.dof_pos[env_ids] = dof_pos[env_ids].clone()
         self.dof_vel[env_ids] = 0.0
@@ -318,7 +357,7 @@ class Go2UP(Humanoid):
                 len(env_ids_int32),
         )
 
-    def _reset_root_states(self, env_ids, root_vel=None, root_quat=None, root_height=None, use_base_init_state=False, set_act=True):
+    def _reset_root_states(self, env_ids, use_base_init_state=False, set_act=True, random_idx=None):
         """Resets ROOT states position and velocities of selected environmments
             Sets base position based on the curriculum
             Selects randomized base velocities within -0.5:0.5 [m/s, rad/s]
@@ -327,9 +366,12 @@ class Go2UP(Humanoid):
         """
         # base position
         if use_base_init_state:
-            self.root_states[env_ids] = self.base_init_state
+            self.root_states[env_ids] = self.base_init_state 
         else:
-            self.root_states[env_ids] = self.initial_root_states[env_ids].clone()
+            self.root_states[env_ids] = self.initial_root_states_all[random_idx].clone()
+            self.root_states[env_ids, 2] += 0.05  # set the height to 0.01
+            self.root_states[env_ids, 7:10] *= 0.0  # set the linear velocity to 0
+            self.root_states[env_ids, 10:] *= 0.0  # set the angular velocity to 0
         if self.custom_origins:
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
             self.root_states[env_ids, 2] += 0.01
@@ -337,6 +379,7 @@ class Go2UP(Humanoid):
                 self.root_states[env_ids, :2] += torch_rand_float(
                     -0.3, 0.3, (len(env_ids), 2), device=self.device
                 )  # xy position within 1m of the center
+
         else:
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
 
@@ -353,12 +396,9 @@ class Go2UP(Humanoid):
         if self.cfg.rewards.standing_scale_curriculum:
             self._update_standing_prob_curriculum() 
         num_standing = int(self.num_envs * self.standing_init_prob)
-        # sample_standing_env_idx = torch.randperm(self.num_envs)[:num_standing]
         standing_env_flag = env_ids < num_standing
         non_standing_env_flag = env_ids >= num_standing
 
-        # reset robot states
-        # falling states
         if len(env_ids[non_standing_env_flag]) > 0:
             self._reset_dofs(env_ids[non_standing_env_flag], set_act=False)
             self._reset_root_states(env_ids[non_standing_env_flag], set_act=False)
@@ -382,7 +422,6 @@ class Go2UP(Humanoid):
             gymtorch.unwrap_tensor(env_ids_int32),
             len(env_ids_int32),
         )
-
 
     def _update_standing_prob_curriculum(self):
         # [Curriculum] Update the standing probability based on the curriculum type
@@ -443,8 +482,9 @@ class Go2UP(Humanoid):
             self._reset_stand_and_lie_states(env_ids, dof_pos=dof_pos)
         else:
             # reset robot states
-            self._reset_dofs(env_ids)
-            self._reset_root_states(env_ids)
+            random_idx = torch.randint(0, self.initial_root_states_all.shape[0], (len(env_ids),))
+            self._reset_dofs(env_ids, random_idx=random_idx)
+            self._reset_root_states(env_ids, random_idx=random_idx)
 
         self._resample_commands(env_ids)  # no resample commands
         self.gym.simulate(self.sim)
@@ -461,7 +501,7 @@ class Go2UP(Humanoid):
         self.feet_air_time[env_ids] = 0.0
         self.reset_buf[env_ids] = 1
         self.obs_history_buf[env_ids, :, :] = 0.0
-        # self.contact_buf[env_ids, :, :] = 0.0
+        self.contact_buf[env_ids, :, :] = 0.0
         self.action_history_buf[env_ids, :, :] = 0.0
         self.feet_land_time[env_ids] = 0.0
         self._reset_buffers_extra(env_ids)
@@ -518,10 +558,8 @@ class Go2UP(Humanoid):
                     else:
                         self._drag_robots(self.base_lin_vel[:, 2])
             elif self.common_step_counter % self.cfg.domain_rand.drag_interval == 0:
-                # drag the robot up regularly
                 if self.cfg.domain_rand.drag_robot_by_force:
                     self._drag_robots_by_force()
-                # self._drag_robots_torso_body()  # TODO: implement it
                 else:
                     self._drag_robots()
 
@@ -549,7 +587,6 @@ class Go2UP(Humanoid):
             # linearly decrease the drag force based on the robot's height
             force = force * torch.clamp(1 - base_height / target_height, min=0.0, max=1.0)
         elif self.cfg.domain_rand.drag_force_curriculum_type == "sin":
-            # NOTE: This would decrase the force to 0 at the target height faster than linear mode
             sin_progress = (base_height / target_height) * torch.pi / 2.0
             force = force * (1 - torch.sin(sin_progress))
         else:
@@ -558,7 +595,6 @@ class Go2UP(Humanoid):
 
     def _drag_robots_by_force(self):
         """Drag the robots up by applying a force"""
-        # TODO: use a force curriculum based on the robot's height
         if self.cfg.domain_rand.drag_force_curriculum:
             force = self._update_drag_force_curriculum(self.cfg.domain_rand.drag_force)
         else:
@@ -575,25 +611,32 @@ class Go2UP(Humanoid):
         if self.cfg.env.terminate_on_velocity:
             base_vel = torch.norm(self.base_lin_vel, dim=-1)
             vel_too_large = base_vel > 2.5
-            self.reset_buf[vel_too_large] = 1     
+            self.reset_buf[vel_too_large] = 1
+
+        current_phase = (self._get_phase() * (self.target_traj_length - 1)).to(torch.int32)
+        head_height = self.rigid_body_states[:, self.head_idx, 2]
+        target_head_height = self.head_height_all_interp[current_phase].squeeze(-1)
+        head_height_error = torch.abs(head_height - target_head_height)
+        head_height_error_too_big = head_height_error > 0.2
+        self.reset_buf[head_height_error_too_big] = 1
+
         if self.cfg.env.terminate_on_height:
             base_too_high = torch.logical_or(self.root_states[:, 2] > 1.2, self.root_states[:, 2] < 0.0)
             self.reset_buf[base_too_high] = 1
-        # print('test = ',self.reset_buf)
         env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
         if len(env_ids) > 0:
             self.termination_height[env_ids] = self.root_states[env_ids, 2]
+
 
     def post_physics_step(self):
         """check terminations, compute observations and rewards
         calls self._post_physics_step_callback() for common computations
         calls self._draw_debug_vis() if needed
         """
-        # Humanoid.post_physics_step(self)
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)
         self.gym.refresh_rigid_body_state_tensor(self.sim)
-        # self.gym.refresh_force_sensor_tensor(self.sim)
+        self.gym.refresh_force_sensor_tensor(self.sim)
 
         self.episode_length_buf += 1
         self.common_step_counter += 1
@@ -688,6 +731,7 @@ class Go2UP(Humanoid):
 
     def compute_observations(self):
 
+
         imu_obs = torch.stack((self.roll, self.pitch), dim=1)
         self.base_yaw_quat = quat_from_euler_xyz(0 * self.yaw, 0 * self.yaw, self.yaw)
         obs_buf = torch.cat(
@@ -748,7 +792,6 @@ class Go2UP(Humanoid):
 
     def _resample_commands(self, env_ids):
         """Randommly select commands of some environments
-
         Args:
             env_ids (List[int]): Environments ids for which new commands are needed
         """
@@ -758,55 +801,13 @@ class Go2UP(Humanoid):
             (len(env_ids), 1),
             device=self.device,
         ).squeeze(1)
+
         # set small commands to zero
         self.commands[env_ids, :2] *= (
             torch.abs(self.commands[env_ids, 0:1]) > self.cfg.commands.lin_vel_clip
         )
 
     # ================================================ Rewards ================================================== #
-
-    def  _reward_base_height_exp(self):
-        z_rwd = torch.clamp(
-            self.root_states[:, 2], min=0.0, max=self.cfg.rewards.base_height_target
-        )
-        return torch.exp(z_rwd) - 1.0
-
-    def _reward_head_height_exp(self):
-        z_rwd = torch.clamp(
-            self.rigid_body_states[:, self.head_idx, 2], min=0.0, max=self.cfg.rewards.head_height_target
-        )
-        return torch.exp(z_rwd) - 1.0
-
-    def _reward_delta_base_height(self):
-        base_height = self.root_states[:, 2]
-        delta_height = base_height - self.last_base_height
-        rise_up = delta_height > 0
-        rew = torch.ones_like(base_height) 
-        rew[~rise_up] = 0.0
-        return rew
-
-    def _reward_feet_contact_forces_increase(self):
-        feet_contact_forces = torch.norm(self.contact_forces[:, self.feet_indices, 2], dim=-1)
-        last_feet_contact_forces = torch.norm(self.last_contact_forces[:, self.feet_indices, 2], dim=-1)
-        delta_contact_forces = feet_contact_forces - last_feet_contact_forces
-        # print(delta_contact_forces, "delta_contact_forces")
-        increase = delta_contact_forces > 0
-        # rew = torch.ones_like(feet_contact_forces) * -1.0
-        rew = torch.ones_like(feet_contact_forces) * 1.0
-        rew[~increase] = 0.0
-        return rew
-
-    def _reward_stand_on_feet(self):
-        # reward for standing on both feet
-        contact = torch.norm(self.contact_forces[:, self.feet_indices], dim=-1) > 2.0
-        stand_on_both = torch.sum(contact, dim=1) == 2
-        feet_on_ground = self.rigid_body_states[:, self.feet_indices, 2] < 0.1
-        feet_on_ground_both = torch.sum(feet_on_ground, dim=1) == 2
-        stand_on_both &= feet_on_ground_both
-        rew = torch.ones_like(stand_on_both) * 1.0
-        rew[~stand_on_both] = 0.0
-        return rew
-    
     def _reward_dof_vel(self):
         return torch.sum(torch.square(self.dof_vel), dim=1)
 
@@ -822,15 +823,38 @@ class Go2UP(Humanoid):
     def _reward_torques(self):
         return torch.norm(self.torques, dim=-1)
     
+    def _reward_ankle_torques(self): 
+        ankle_indices = [4, 5, 10, 11]
+        return torch.norm(self.torques[:, ankle_indices], dim=-1)
+    
+    def _reward_upper_dof_pos_limits(self):
+        upper_indices = [15, 16, 17, 18, 19, 20, 21, 22]
+        out_of_limits = -(self.dof_pos[:, upper_indices] - self.dof_pos_limits[upper_indices, 0]).clip(max=0.)  # lower limit
+        out_of_limits += (self.dof_pos[:, upper_indices] - self.dof_pos_limits[upper_indices, 1]).clip(min=0.)
+        return torch.sum(out_of_limits, dim=1)
+    
     def _reward_dof_pos_limits(self):
         out_of_limits = -(self.dof_pos - self.dof_pos_limits[:, 0]).clip(max=0.)  # lower limit
         out_of_limits += (self.dof_pos - self.dof_pos_limits[:, 1]).clip(min=0.)
         return torch.sum(out_of_limits, dim=1)
     
+    def _reward_ankle_dof_pos_limits(self):
+        shoulder_indices = [4, 5, 10, 11]
+        out_of_limits = -(self.dof_pos[:, shoulder_indices] - self.dof_pos_limits[shoulder_indices, 0]).clip(max=0.)  # lower limit
+        out_of_limits += (self.dof_pos[:, shoulder_indices] - self.dof_pos_limits[shoulder_indices, 1]).clip(min=0.)
+        return torch.sum(out_of_limits, dim=1)
+
+    
+    def _reward_upper_torques(self):
+        return torch.norm(self.torques[:, 15:23], dim=-1)
+    
     def _reward_dof_torque_limits(self):
-        # out_of_limits = torch.sum((torch.abs(self.torques) - self.torque_limits * self.cfg.rewards.soft_torque_limit).clip(min=0), dim=1)
-        # return out_of_limits
         out_of_limits = torch.sum((torch.abs(self.torques) / self.torque_limits - self.cfg.rewards.soft_torque_limit).clip(min=0), dim=1)
+        return out_of_limits
+
+    def _reward_dof_torque_limits_upper(self):
+        upper_limits = [15, 16, 17, 18, 19, 20, 21, 22]
+        out_of_limits = torch.sum((torch.abs(self.torques) / self.torque_limits - self.cfg.rewards.soft_torque_limit)[:, upper_limits].clip(min=0), dim=1)
         return out_of_limits
     
     def _reward_energy(self):
@@ -839,29 +863,6 @@ class Go2UP(Humanoid):
     def _reward_dof_acc(self):
         return torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1)
     
-    def _reward_body_up_exp(self):
-        z_axis = self.projected_gravity[:, 2]  # + down/ - up
-        reward = torch.exp(-z_axis)
-
-        return reward
-
-    def _reward_feet_height(self):
-        feet_height = torch.mean(self.rigid_body_states[:, self.feet_indices, 2], dim=-1)
-        return torch.exp(-10 * feet_height)
-
-    def _reward_dof_error(self):
-        dof_error = torch.sum(torch.square(self.dof_pos - self.default_dof_pos), dim=1)
-        # print("head height: ", self.rigid_body_states[:, self.head_idx, 2])
-        standing_flag = self.rigid_body_states[:, self.head_idx, 2] > 1.1
-        # print(dof_error, "dof_error")
-        ## Version 1
-        # dof_error[~standing_flag] = torch.clamp(dof_error[~standing_flag], min=50.0)
-        ## version 2
-        # dof_error[~standing_flag] = torch.maximum(dof_error[~standing_flag], torch.tensor(50.0, device=dof_error.device))
-        ## version 3
-        dof_error[~standing_flag] *= 0
-        return dof_error
-
     def _reward_feet_orientation(self):
         left_quat = self.rigid_body_rot[:, self.feet_indices[0]]
         left_gravity = quat_rotate_inverse(left_quat, self.gravity_vec)
@@ -871,25 +872,21 @@ class Go2UP(Humanoid):
 
     def _reward_termination(self):
         # Terminal reward / penalty
+        # print("reset_buf 形状:", self.reset_buf.shape)  # 应为 (num_envs,)
+        # print("reset_buf 长度:", self.reset_buf.numel())  # 应为 num_envs
+        # print("time_out_buf 形状:", self.time_out_buf.shape)
+        # print("time_out_buf 长度:", self.time_out_buf.numel())       
         return self.reset_buf * ~self.time_out_buf
 
-    def _reward_soft_symmetry_body(self):
-        left_body_action = self.actions[:, self.left_dof_indices] # [num_envs, 10] 0, 1, 2, 3, 4, 5, 15, 16, 17, 18
-        right_body_action = self.actions[:, self.right_dof_indices] # [num_envs, 10]
-        # negative_indices = torch.tensor([1, 2, 5, 16, 17], device=self.device, dtype=torch.int64)
-        negative_indices = torch.tensor([1, 2, 5, 7, 8], device=self.device, dtype=torch.int64)
-        left_body_action[:, negative_indices] *= -1
-        body_symmetry = torch.norm(left_body_action - right_body_action, dim=-1)
+    def _reward_tracking_dof_error(self):
+        current_phase = (self._get_phase() * (self.target_traj_length - 1)).to(torch.int32)
+        target_dof_pos = self.dof_pos_all_interp[current_phase].squeeze(-1)
+        dof_error = torch.sum(torch.square(self.dof_pos - target_dof_pos), dim=1) # self.dof_pos_all_interp: [ 250, 23], current_phase: [num_envs]
+        return torch.exp(-dof_error / (self.cfg.rewards.tracking_sigma*20))
 
-        if self.cfg.env.no_symmetry_after_stand:
-            standing_flag = self.rigid_body_states[:, self.head_idx, 2] > 1.1
-            body_symmetry[standing_flag] *= 0
-        return body_symmetry
-
-    def _reward_soft_symmetry_waist(self):
-        waist_roll_yaw = self.actions[:, self.waist_indices]
-        waist_symmetry = torch.norm(waist_roll_yaw, dim=-1)
-        if self.cfg.env.no_symmetry_after_stand:
-            standing_flag = self.rigid_body_states[:, self.head_idx, 2] > 1.1
-            waist_symmetry[standing_flag] *= 0
-        return waist_symmetry
+    def _get_phase(self):
+        standing_flag = self.episode_length_buf >= self.target_traj_length
+        current_phase = self.episode_length_buf.clone()
+        current_phase[standing_flag] = self.target_traj_length - 1
+        return current_phase / (self.target_traj_length - 1) # [] 0 ~ 1
+    

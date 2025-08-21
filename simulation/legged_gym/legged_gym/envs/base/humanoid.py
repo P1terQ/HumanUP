@@ -365,11 +365,11 @@ class Humanoid(LeggedRobot):
         return
 
     def check_termination(self):
-        self.reset_buf = torch.any(
-            torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1000.0,
-            dim=1,
-        )
-
+        # self.reset_buf = torch.any(
+        #     torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1000.0,
+        #     dim=1,
+        # )
+        self.reset_buf = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         # height_cutoff = self.root_states[:, 2] < self.cfg.rewards.termination_height
 
         # roll_cut = torch.abs(self.roll) > 1.0

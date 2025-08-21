@@ -209,4 +209,17 @@ def play(args):
 
 if __name__ == "__main__":
     args = get_args()
+    
+    args.task = "go2roll_track" # 改这个就行
+
+
+    args.proj_name = f"{args.task}"
+    args.num_envs = 4096
+    args.headless = True
+    if args.task == "go2roll_track" :
+        args.traj_name = "rollover_traj"
+    elif args.task == "go2_track":
+        args.traj_name = "getup_traj"
+    else:
+        print("no trajectory for this task")
     play(args)

@@ -34,10 +34,10 @@
 from legged_gym.envs.base.humanoid_config import HumanoidCfg, HumanoidCfgPPO
 
 
-class G1WaistRollHumanUPCfg(HumanoidCfg):
+class Go2TrackCfg(HumanoidCfg):
     class env(HumanoidCfg.env):
         num_envs = 4096
-        num_actions = 23  # NOTE: the wrist dof is removed
+        num_actions = 12 # NOTE: the wrist dof is removed
         n_priv = 0
         n_proprio = 3 + 2 + 3 * num_actions  # NOTE
         n_priv_latent = 4 + 1 + 2 * num_actions + 3
@@ -57,69 +57,41 @@ class G1WaistRollHumanUPCfg(HumanoidCfg):
         history_encoding = True
         contact_buf_len = 10
 
-        normalize_obs = False#True
+        normalize_obs = True
 
-        terminate_on_velocity = True
-        terminate_on_height = True
+        terminate_on_velocity = False#True
+        terminate_on_height = False#True
 
         no_symmetry_after_stand = True
+
+        traj_name = None
 
     class terrain(HumanoidCfg.terrain):
         mesh_type = "plane"
 
     class init_state(HumanoidCfg.init_state):
-        pos = [0, 0, 1.2]
+        pos = [0.0, 0.0, 0.42] # x,y,z [m]
         rot = [0.0, -0.707, 0.0, 0.707]  # up
-        default_joint_angles = {
-            # lower body (12 dof)
-            "left_hip_pitch_joint": -0.1,
-            "left_hip_roll_joint": 0.0,
-            "left_hip_yaw_joint": 0.0,
-            "left_knee_joint": 0.3,
-            "left_ankle_pitch_joint": -0.2,
-            "left_ankle_roll_joint": 0,
-            "right_hip_pitch_joint": -0.1,
-            "right_hip_roll_joint": 0.0,
-            "right_hip_yaw_joint": 0.0,
-            "right_knee_joint": 0.3,
-            "right_ankle_pitch_joint": -0.2,
-            "right_ankle_roll_joint": 0,
-            # waist (3 dof)
-            "waist_yaw_joint": 0.0,
-            "waist_roll_joint": 0.0,
-            "waist_pitch_joint": 0.0,  # -90 degrees
-            # upper body (14dof = 8 dof + 6 dof wrist)
-            "left_shoulder_pitch_joint": 0.0,
-            "left_shoulder_roll_joint": 0.0,
-            "left_shoulder_yaw_joint": 0.0,
-            "left_elbow_joint": 0.0,  #0.0,
-            "right_shoulder_pitch_joint": 0.0,
-            "right_shoulder_roll_joint": 0.0,
-            "right_shoulder_yaw_joint": 0.0,
-            "right_elbow_joint": 0.0,  #0.0,
-        }  # = target angles [rad] when action = 0.0
+        default_joint_angles = { # = target angles [rad] when action = 0.0
+            'FL_hip_joint': 0.1,   # [rad]
+            'RL_hip_joint': 0.1,   # [rad]
+            'FR_hip_joint': -0.1 ,  # [rad]
+            'RR_hip_joint': -0.1,   # [rad]
+
+            'FL_thigh_joint': 0.8,     # [rad]
+            'RL_thigh_joint': 1.,   # [rad]
+            'FR_thigh_joint': 0.8,     # [rad]
+            'RR_thigh_joint': 1.,   # [rad]
+
+            'FL_calf_joint': -1.5,   # [rad]
+            'RL_calf_joint': -1.5,    # [rad]
+            'FR_calf_joint': -1.5,  # [rad]
+            'RR_calf_joint': -1.5,    # [rad]
+        }
 
     class control(HumanoidCfg.control):
-        stiffness = {
-            "hip_yaw": 150,
-            "hip_roll": 150,
-            "hip_pitch": 200,
-            "knee": 200,
-            "ankle": 20,
-            "shoulder": 40,
-            "elbow": 40,
-            "waist": 200,
-        }  # [N*m/rad]
-        damping = {
-            "hip_yaw": 5,
-            "hip_roll": 5,
-            "hip_pitch": 5,
-            "knee": 5,
-            "ankle": 4,
-            "shoulder": 10,
-            "elbow": 10,
-            "waist": 5,
-        }  # [N*m/rad]  # [N*m*s/rad]
+        stiffness = {'joint': 40.0}  # [N*m/rad]
+        damping = {'joint': 1.0} 
 
         action_scale = 0.5
         decimation = 20
@@ -132,41 +104,41 @@ class G1WaistRollHumanUPCfg(HumanoidCfg):
         clip_actions = 5
 
     class asset(HumanoidCfg.asset):
-        file = "{LEGGED_GYM_ROOT_DIR}/resources/robots/g1_modified/g1_29dof_fixedwrist_custom_collision_with_head.urdf"
-        # for both joint and link name
-        torso_name: str = "torso_link"  # humanoid pelvis part
-        chest_name: str = "torso_link"  # humanoid chest part
-        forehead_name: str = "head_link"  # humanoid head part
+        file = "{LEGGED_GYM_ROOT_DIR}/resources/robots/go2/urdf/go2.urdf"
+        flip_visual_attachments = True        # for both joint and link name
+        torso_name: str = "base"  # humanoid pelvis part
+        chest_name: str = "base"  # humanoid chest part
+        forehead_name: str = "base"  # humanoid head part
 
-        waist_name: str = "torso_joint"
+        waist_name: str = "base"
 
         # for link name
-        thigh_name: str = "hip_roll_link"
-        shank_name: str = "knee_link"
-        foot_name: str = "ankle_roll_link"  # foot_pitch is not used
-        upper_arm_name: str = "shoulder_roll_link"
-        lower_arm_name: str = "elbow_pitch_link"
-        hand_name: str = "hand"
+        thigh_name: str = "thigh"
+        shank_name: str = "calf"
+        foot_name: str = "foot"  # foot_pitch is not used
+        upper_arm_name: str = "hip"
+        lower_arm_name: str = "calf"
+        hand_name: str = "head"
 
         # for joint name
         hip_name: str = "hip"
-        hip_roll_name: str = "hip_roll_joint"
-        hip_yaw_name: str = "hip_yaw_joint"
-        hip_pitch_name: str = "hip_pitch_joint"
-        knee_name: str = "knee_link"
-        ankle_name: str = "ankle"
-        ankle_pitch_name: str = "ankle_pitch_joint"
-        shoulder_name: str = "shoulder"
-        shoulder_pitch_name: str = "shoulder_pitch_joint"
-        shoulder_roll_name: str = "shoulder_roll_joint"
-        shoulder_yaw_name: str = "shoulder_yaw_joint"
-        elbow_name: str = "elbow_pitch_joint"
+        hip_roll_name: str = "hip"
+        hip_yaw_name: str = "hip"
+        hip_pitch_name: str = "hip"
+        knee_name: str = "thigh"
+        ankle_name: str = "calf"
+        ankle_pitch_name: str = "calf"
+        shoulder_name: str = "calf"
+        shoulder_pitch_name: str = "calf"
+        shoulder_roll_name: str = "calf"
+        shoulder_yaw_name: str = "calf"
+        elbow_name: str = "calf"
 
-        feet_bodies = ["left_ankle_roll_link", "right_ankle_roll_link"]
+        feet_bodies = ["foot"]
         n_lower_body_dofs: int = 12
 
         penalize_contacts_on = ["shoulder", "elbow", "hip"]  # NOTE: now there is no penalization on contacts
-        terminate_after_contacts_on = ["torso_link"]  # NOTE: now there is no termination after contacts
+        terminate_after_contacts_on = []  # NOTE: now there is no termination after contacts
         dof_armature =[0.0,0.0,0.0,0.0,0.0,0.001]*2 + [0.0]* 3 + [0.0]*8
 
     class rewards(HumanoidCfg.rewards):
@@ -176,9 +148,9 @@ class G1WaistRollHumanUPCfg(HumanoidCfg):
             "dof_vel",
             "feet_stumble",
             "feet_contact_forces",
+            "feet_height",
             "feet_height_target_error",
             "feet_height_target_error_exp",
-            "zmp_stability",
             "stand_on_feet",
             "lin_vel_z",
             "ang_vel_xy",
@@ -190,53 +162,48 @@ class G1WaistRollHumanUPCfg(HumanoidCfg):
         ]
         regularization_scale = 1.0
         regularization_scale_range = [0.8, 2.0]
-        regularization_scale_curriculum = False
+        regularization_scale_curriculum = True
         regularization_scale_curriculum_type = "step_height"  # ["sin", "step_height", "step_episode"]
         regularization_scale_gamma = 0.0001
-        regularization_scale_curriculum_iterations = 20000
-
-        face_down_scale = 1.0
-        face_down_scale_range = [0.1, 0.5]
-        face_down_scale_curriculum = False
-        face_down_scale_curriculum_type = "step_height"  # ["sin", "step_height", "step_episode"]
-        face_down_scale_gamma = 0.0001
-        face_down_scale_curriculum_iterations = 20000
+        regularization_scale_curriculum_iterations = 100000
 
         standing_scale = 1.0
         standing_scale_range = [0., 0.]
-        standing_scale_curriculum = True
+        standing_scale_curriculum = False
         standing_scale_curriculum_type = "cos"
         standing_scale_gamma = 0.0001
-        standing_scale_curriculum_iterations = 20000
+        standing_scale_curriculum_iterations = 50000
+
         class scales:
-            orientation = -1.0
-            feet_distance_continuous = 1.0 * 2.0
-            knee_distance_continuous = 1.0 * 2.0
-            base_roll_gravity_error_cosine = -2
-            torso_roll_gravity_error_cosine = -2
-            knee_roll_gravity_error_cosine = -2
-
-            termination = -500
-
             # smooth reward
-            dof_error = -0.02
-            base_lin_vel = -0.1
-            ang_vel = -0.1
-            dof_vel = -0.0001
-            action_rate = -0.1
-            torques = -6e-7
-            dof_pos_limits = -5
-            dof_torque_limits = -0.1
-            energy = -1e-4
-            dof_acc = -1e-7
+            base_lin_vel = -0.1  
+            ang_vel = -0.1  
+            dof_vel = -0.001  
+            action_rate = -0.1  
+            torques = -0.003  
+            dof_pos_limits = -5  
+            dof_torque_limits = -5  
+            energy = -0.0001  
+            dof_acc = -0  
+            ankle_dof_pos_limits = 0#-5  
+            upper_dof_pos_limits = 0#-5  
+            dof_torque_limits_upper = 0#-5  
+            ankle_torques = 0#-0.01  
+            upper_torques = 0#-0.01
+
+            tracking_dof_error = 0#8
+            termination = -50
+
+            feet_distance = 0#2.0
+            feet_orientation = 0#-0.5
+
 
         base_height_target = 0.728  # NOTE: the target height of the base
         head_height_target = 1.3  # NOTE: the target height of the head
         target_feet_height = 0.1  # NOTE: the target height of the feet
-        knee_height_target = 0.35  # NOTE
         min_dist = 0.25
-        max_dist = 0.65
-        max_knee_dist = 0.65
+        max_dist = 1.0
+        max_knee_dist = 0.5
         target_joint_pos_scale = 0.17
         cycle_time = 0.64
         double_support_threshold = 0.1
@@ -266,14 +233,14 @@ class G1WaistRollHumanUPCfg(HumanoidCfg):
         min_drag_vel = 0.1  # min drag velocity [m/s]
         max_drag_vel = 0.5  # max drag velocity [m/s]
 
-        domain_rand_general = False  # manually set this, setting from parser does not work;
+        domain_rand_general = True  # manually set this, setting from parser does not work;
 
         randomize_gravity = True and domain_rand_general
         gravity_rand_interval_s = 4
         gravity_range = (-0.1, 0.1)
 
         randomize_friction = True and domain_rand_general
-        friction_range = [0.6, 2.0]
+        friction_range = [1.0, 3.0]
 
         randomize_base_mass = True and domain_rand_general
         added_mass_range = [-3.0, 3]
@@ -292,7 +259,7 @@ class G1WaistRollHumanUPCfg(HumanoidCfg):
         action_buf_len = 8
 
     class noise(HumanoidCfg.noise):
-        add_noise = False
+        add_noise = True
         noise_increasing_steps = 5000
 
         class noise_scales:
@@ -318,7 +285,7 @@ class G1WaistRollHumanUPCfg(HumanoidCfg):
             ang_vel_yaw = [-0.6, 0.6]  # min max [rad/s]
 
 
-class G1WaistRollHumanUPCfgPPO(HumanoidCfgPPO):
+class Go2TrackCfgPPO(HumanoidCfgPPO):
     seed = 1
 
     class runner(HumanoidCfgPPO.runner):
@@ -339,11 +306,8 @@ class G1WaistRollHumanUPCfgPPO(HumanoidCfgPPO):
         resume_path = None  # updated from load_run and chkpt
 
     class policy(HumanoidCfgPPO.policy):
-        action_std = [0.3, 0.3, 0.3, 0.4, 0.2, 0.2] * 2 + [0.1] * 3 + [0.2] * 8  # NOTE: the wrist dof is removed
+        # action_std = [0.3, 0.3, 0.3, 0.4, 0.2, 0.2] * 2 + [0.1] * 3 + [0.2] * 8  # NOTE: the wrist dof is removed
         init_noise_std = 1.0
-        action_std_curriculum = False
-        action_std_curriculum_type = "sin"  # ["cos", "cos_step", "linear"]
-        action_std_curriculum_steps = 20001
 
     class algorithm(HumanoidCfgPPO.algorithm):
         grad_penalty_coef_schedule = [0.00, 0.00, 700, 1000]  # NOTE: no grad penalty

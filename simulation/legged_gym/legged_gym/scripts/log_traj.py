@@ -87,9 +87,9 @@ def play(args):
     exptid = args.exptid
     log_pth = "../../logs/{}/".format(args.proj_name) + args.exptid
     stand_flag = False
-    if args.proj_name.strip() == 'g1waist_up' :
+    if args.proj_name.strip() == 'g1waist_up' or args.proj_name.strip() == 'go2up':
         stand_flag = True
-    elif args.proj_name.strip() == 'g1waistroll_up':
+    elif args.proj_name.strip() == 'g1waistroll_up' or args.proj_name.strip() == 'go2rollup':
         stand_flag = False
     else:
         print("Invalid project name")
@@ -136,7 +136,11 @@ def play(args):
         for i in range(env.num_envs):
             model, checkpoint = get_load_path(root=log_pth, checkpoint=args.checkpoint, model_name_include="model")
             video_name = args.proj_name + "-" + args.exptid + "-" + checkpoint + ".mp4"
-            run_name = log_pth.split("/")[-1]
+            # run_name = log_pth.split("/")[-1]
+            if args.task == "go2up":
+                run_name = 'getup_traj'
+            elif args.task == "go2rollup":
+                run_name = 'rollover_traj'
             path = f"../../logs/videos/{args.proj_name}/{run_name}"
             if not os.path.exists(path):
                 os.makedirs(path)
@@ -196,6 +200,8 @@ def play(args):
         else: # g1waistroll_up
             target_projected_gravity = torch.tensor([-1, 0, 0], device=env.device)
             gravity_error = 1 - torch.nn.functional.cosine_similarity(env.projected_gravity, target_projected_gravity, dim=-1)  # [0, 2]
+            # print("gravity_error shape:", gravity_error.shape)
+
             if gravity_error < 0.1:
                 finish_cnt += 1
         
@@ -239,4 +245,11 @@ def play(args):
 
 if __name__ == "__main__":
     args = get_args()
+    #只需要改这个就行
+    args.task = "go2up"
+
+
+    args.proj_name = f"{args.task}"
+    args.num_envs = 1
+    args.record_video = True
     play(args)
