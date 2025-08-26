@@ -1,4 +1,3 @@
-.gitignore
 LICENSE
 requirements.txt
 setup.py

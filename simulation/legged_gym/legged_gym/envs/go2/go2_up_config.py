@@ -202,7 +202,7 @@ class Go2UPCfg(HumanoidCfg):
             feet_distance = 2
             soft_symmetry_body = 0#-1
             soft_symmetry_waist = 0#-1
-            feet_orientation = -0.5
+            feet_orientation = 0.0#-0.5
             foot_slip = -1
 
 
@@ -221,7 +221,7 @@ class Go2UPCfg(HumanoidCfg):
             dof_acc = -0.0000001
 
 
-        base_height_target = 0.728  # NOTE: the target height of the base
+        base_height_target = 0.35#0.728  # NOTE: the target height of the base
         head_height_target = 1.3  # NOTE: the target height of the head
         target_feet_height = 0.1  # NOTE: the target height of the feet
         min_dist = 0.25

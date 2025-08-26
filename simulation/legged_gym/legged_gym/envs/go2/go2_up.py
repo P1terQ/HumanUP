@@ -56,6 +56,22 @@ from legged_gym.envs.base.humanoid import Humanoid
 from legged_gym.envs.base.humanoid_config import HumanoidCfg, HumanoidCfgPPO
 from legged_gym.envs.g1waist.g1waist_up_config import G1WaistHumanUPCfg
 
+@torch.jit.script
+def quat_from_euler_xyz(roll, pitch, yaw):
+    cy = torch.cos(yaw * 0.5)
+    sy = torch.sin(yaw * 0.5)
+    cr = torch.cos(roll * 0.5)
+    sr = torch.sin(roll * 0.5)
+    cp = torch.cos(pitch * 0.5)
+    sp = torch.sin(pitch * 0.5)
+
+    qw = cy * cr * cp + sy * sr * sp
+    qx = cy * sr * cp - sy * cr * sp
+    qy = cy * cr * sp + sy * sr * cp
+    qz = sy * cr * cp - cy * sr * sp
+
+    return torch.stack([qx, qy, qz, qw], dim=-1)
+
 
 class Go2UP(Humanoid):
     def __init__(self, cfg: G1WaistHumanUPCfg, sim_params, physics_engine, sim_device, headless):
@@ -92,8 +108,10 @@ class Go2UP(Humanoid):
         # self.initial_root_states = torch.tensor([ 8.6570e-03,  5.0515e-04,  5.6526e-02, -9.8234e-03,  4.9986e-01,
         #     1.7525e-02, -8.6587e-01,  1.0610e-04, -4.5519e-05,  2.4261e-03,
         #     5.6199e-03, -8.3706e-03, -1.0773e-03]).to(sim_device).repeat(self.num_envs, 1)
-        self.initial_root_states = torch.tensor([ 8.6570e-03,  5.0515e-04,  0.42, -9.8234e-03,  4.9986e-01,
-            1.7525e-02, -8.6587e-01,  1.0610e-04, -4.5519e-05,  2.4261e-03,
+        self.initial_root_states = torch.tensor([ 
+            8.6570e-03,  5.0515e-04,  0.42, 
+            -9.8234e-03,  4.9986e-01, 1.7525e-02, -8.6587e-01,  
+            1.0610e-04, -4.5519e-05,  2.4261e-03,
             5.6199e-03, -8.3706e-03, -1.0773e-03]).to(sim_device).repeat(self.num_envs, 1)
         self.initial_dof_pos = torch.tensor([0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.]).to(sim_device).repeat(self.num_envs, 1)
         
@@ -326,28 +344,73 @@ class Go2UP(Humanoid):
             env_ids (List[int]): Environemnt ids
         """
         # base position
-        if use_base_init_state:
-            self.root_states[env_ids] = self.base_init_state
-        else:
-            self.root_states[env_ids] = self.initial_root_states[env_ids].clone()
+        # if use_base_init_state:
+        #     self.root_states[env_ids] = self.base_init_state
+        # else:
+        #     self.root_states[env_ids] = self.initial_root_states[env_ids].clone()
+        # if self.custom_origins:
+        #     self.root_states[env_ids, :3] += self.env_origins[env_ids]
+        #     self.root_states[env_ids, 2] += 0.01
+        #     if self.cfg.env.randomize_start_pos:
+        #         self.root_states[env_ids, :2] += torch_rand_float(
+        #             -0.3, 0.3, (len(env_ids), 2), device=self.device
+        #         )  # xy position within 1m of the center
+        # else:
+        #     self.root_states[env_ids, :3] += self.env_origins[env_ids]
+
+        # if set_act is True:
+        #     env_ids_int32 = env_ids.to(dtype=torch.int32)
+        #     self.gym.set_actor_root_state_tensor_indexed(
+        #         self.sim,
+        #         gymtorch.unwrap_tensor(self.root_states),
+        #         gymtorch.unwrap_tensor(env_ids_int32),
+        #         len(env_ids_int32),
+        #     )
+
         if self.custom_origins:
+            self.root_states[env_ids] = self.base_init_state
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
-            self.root_states[env_ids, 2] += 0.01
-            if self.cfg.env.randomize_start_pos:
-                self.root_states[env_ids, :2] += torch_rand_float(
-                    -0.3, 0.3, (len(env_ids), 2), device=self.device
-                )  # xy position within 1m of the center
+            # self.root_states[env_ids, :2] += torch_rand_float(-1., 1., (len(env_ids), 2), device=self.device) # xy position within 1m of the center
+            self.root_states[env_ids, :2] += torch_rand_float(-2., 2., (len(env_ids), 2), device=self.device) # xy position within 1m of the center
         else:
+            self.root_states[env_ids] = self.base_init_state
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
 
-        if set_act is True:
-            env_ids_int32 = env_ids.to(dtype=torch.int32)
-            self.gym.set_actor_root_state_tensor_indexed(
-                self.sim,
-                gymtorch.unwrap_tensor(self.root_states),
-                gymtorch.unwrap_tensor(env_ids_int32),
-                len(env_ids_int32),
-            )
+        # test
+        # rpy生成为[0,pi/4, 0, 0]
+        # rand_rpy = torch.tensor([0, np.pi * 5 / 4, 0], device=self.device).expand(len(env_ids), 3)
+
+        #! postive和negative两种可能性reset
+        random_env_floats = torch.rand(len(env_ids), device=self.device)
+        positive_envs = env_ids[random_env_floats <= 0.3]
+        negative_envs = env_ids[0.3 <= random_env_floats]
+
+
+        #! negative
+        self.root_states[negative_envs, 2] += torch.rand(len(negative_envs), device=self.device, requires_grad=False).mul(0.2).add(0.1)
+        self.root_states[negative_envs, 3:7] = quat_from_euler_xyz(torch.rand(len(negative_envs), device=self.device, requires_grad=False).mul(np.pi).sub(np.pi / 2), 
+                                                             torch.rand(len(negative_envs), device=self.device, requires_grad=False).mul(np.pi / 3).add(np.pi * 5 / 6), 
+                                                             torch.rand(len(negative_envs), device=self.device, requires_grad=False).mul(np.pi * 2).sub(np.pi))   
+
+        #! positive
+        self.root_states[positive_envs, 2] += torch.rand(len(positive_envs), device=self.device, requires_grad=False).mul(0.2).add(0.3)
+        self.root_states[positive_envs, 3:7] = quat_from_euler_xyz(torch.rand(len(positive_envs), device=self.device, requires_grad=False).mul(np.pi).sub(np.pi / 2), 
+                                                             torch.rand(len(positive_envs), device=self.device, requires_grad=False).mul(np.pi / 3).sub(np.pi / 6), 
+                                                             torch.rand(len(positive_envs), device=self.device, requires_grad=False).mul(np.pi * 2).sub(np.pi))   
+
+        
+        # rand_rpy = torch_rand_float(-np.pi, np.pi, (len(env_ids), 3), device=self.device)
+        # self.root_states[env_ids, 3:7] = quat_from_euler_xyz(rand_rpy[:, 0], rand_rpy[:, 1], rand_rpy[:, 2])        
+        
+        # vel rand: [7:10]: lin vel, [10:13]: ang vel
+        self.root_states[env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6), device=self.device) 
+
+        env_ids_int32 = env_ids.to(dtype=torch.int32)
+        self.gym.set_actor_root_state_tensor_indexed(self.sim,
+                                                     gymtorch.unwrap_tensor(self.root_states),
+                                                     gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+
+
 
     def _reset_stand_and_lie_states(self, env_ids, dof_pos):
         if self.cfg.rewards.standing_scale_curriculum:
@@ -799,7 +862,7 @@ class Go2UP(Humanoid):
     def _reward_stand_on_feet(self):
         # reward for standing on both feet
         contact = torch.norm(self.contact_forces[:, self.feet_indices], dim=-1) > 2.0
-        stand_on_both = torch.sum(contact, dim=1) == 2
+        stand_on_both = torch.sum(contact, dim=1) == 4#2
         feet_on_ground = self.rigid_body_states[:, self.feet_indices, 2] < 0.1
         feet_on_ground_both = torch.sum(feet_on_ground, dim=1) == 2
         stand_on_both &= feet_on_ground_both
@@ -852,7 +915,8 @@ class Go2UP(Humanoid):
     def _reward_dof_error(self):
         dof_error = torch.sum(torch.square(self.dof_pos - self.default_dof_pos), dim=1)
         # print("head height: ", self.rigid_body_states[:, self.head_idx, 2])
-        standing_flag = self.rigid_body_states[:, self.head_idx, 2] > 1.1
+        # standing_flag = self.rigid_body_states[:, self.head_idx, 2] > 1.1
+        standing_flag = self.root_states[:, 2] > 0.3
         # print(dof_error, "dof_error")
         ## Version 1
         # dof_error[~standing_flag] = torch.clamp(dof_error[~standing_flag], min=50.0)

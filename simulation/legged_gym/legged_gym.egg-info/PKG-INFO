@@ -1,13 +1,11 @@
 Metadata-Version: 2.1
-Name: legged-gym
+Name: legged_gym
 Version: 1.0.0
 Summary: Isaac Gym environments for Legged Robots
-Home-page: UNKNOWN
 Author: Nikita Rudin
 Author-email: rudinn@ethz.ch
 License: BSD-3-Clause
-Platform: UNKNOWN
 License-File: LICENSE
-
-UNKNOWN
-
+Requires-Dist: isaacgym
+Requires-Dist: rsl-rl
+Requires-Dist: matplotlib
