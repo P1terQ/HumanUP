@@ -125,7 +125,8 @@ def play(args):
     all_roll = []
     all_yaw = []
 
-    for i in tqdm(range(traj_length)):
+    # for i in tqdm(range(traj_length)):
+    for i in (range(traj_length)):
 
         if if_normalize:
             normalized_obs = normalizer(obs.detach())
@@ -154,7 +155,8 @@ if __name__ == "__main__":
     args = get_args()
     
     args.task = "go2up" 
-    args.exptid = "2025-08-26_23-51-19"
+    # args.exptid = "2025-08-26_23-51-19"
+    args.exptid = "2025-08-27_14-36-42"
 
     # args.task = "go2roll_track" # 
 

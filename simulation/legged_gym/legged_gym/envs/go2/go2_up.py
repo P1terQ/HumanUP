@@ -391,13 +391,15 @@ class Go2UP(Humanoid):
 
 
         #! negative
-        self.root_states[negative_envs, 2] += torch.rand(len(negative_envs), device=self.device, requires_grad=False).mul(0.2).add(0.1)
+        # self.root_states[negative_envs, 2] += torch.rand(len(negative_envs), device=self.device, requires_grad=False).mul(0.2).add(0.1)
+        self.root_states[negative_envs, 2] += torch.rand(len(negative_envs), device=self.device, requires_grad=False).mul(0.2)
         self.root_states[negative_envs, 3:7] = quat_from_euler_xyz(torch.rand(len(negative_envs), device=self.device, requires_grad=False).mul(np.pi).sub(np.pi / 2), 
                                                              torch.rand(len(negative_envs), device=self.device, requires_grad=False).mul(np.pi / 3).add(np.pi * 5 / 6), 
                                                              torch.rand(len(negative_envs), device=self.device, requires_grad=False).mul(np.pi * 2).sub(np.pi))   
 
         #! positive
-        self.root_states[positive_envs, 2] += torch.rand(len(positive_envs), device=self.device, requires_grad=False).mul(0.2).add(0.3)
+        # self.root_states[positive_envs, 2] += torch.rand(len(positive_envs), device=self.device, requires_grad=False).mul(0.2).add(0.3)
+        self.root_states[positive_envs, 2] += torch.rand(len(positive_envs), device=self.device, requires_grad=False).mul(0.2)
         self.root_states[positive_envs, 3:7] = quat_from_euler_xyz(torch.rand(len(positive_envs), device=self.device, requires_grad=False).mul(np.pi).sub(np.pi / 2), 
                                                              torch.rand(len(positive_envs), device=self.device, requires_grad=False).mul(np.pi / 3).sub(np.pi / 6), 
                                                              torch.rand(len(positive_envs), device=self.device, requires_grad=False).mul(np.pi * 2).sub(np.pi))   
@@ -853,6 +855,7 @@ class Go2UP(Humanoid):
         rise_up = delta_height > 0
         rew = torch.ones_like(base_height) 
         rew[~rise_up] = 0.0
+        # print("delta_base_height reward: ", rew)
         return rew
 
     def _reward_feet_contact_forces_increase(self):
@@ -869,7 +872,7 @@ class Go2UP(Humanoid):
     def _reward_stand_on_feet(self):
         # reward for standing on both feet
         contact = torch.norm(self.contact_forces[:, self.feet_indices], dim=-1) > 2.0
-        print("feet contact: ", contact)
+        # print("feet contact: ", contact)
         stand_on_both = torch.sum(contact, dim=1) == 4#2
         feet_on_ground = self.rigid_body_states[:, self.feet_indices, 2] < 0.1
         feet_on_ground_both = torch.sum(feet_on_ground, dim=1) == 2
@@ -965,3 +968,14 @@ class Go2UP(Humanoid):
             standing_flag = self.rigid_body_states[:, self.head_idx, 2] > 1.1
             waist_symmetry[standing_flag] *= 0
         return waist_symmetry
+    
+    def _reward_stand_still_dof(self):
+        # reward standing still
+        take_effect_flag = ((self.projected_gravity[:, 2]) < -0.7)
+
+        dof_residues = -torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) / 12   # -0.8,  -0.18
+        still_dof_reward = torch.exp(dof_residues) # 0.45, 0.83
+
+        # print("still_dof_reward: ", torch.where(take_effect_flag, still_dof_reward, torch.zeros_like(still_dof_reward)))
+        return torch.where(take_effect_flag, still_dof_reward, torch.zeros_like(still_dof_reward))
+

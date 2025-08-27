@@ -193,13 +193,15 @@ class Go2UPCfg(HumanoidCfg):
         class scales:
             base_height_exp = 5
             head_height_exp = 0.0#5
-            delta_base_height = 1
-            feet_contact_forces_increase = 1
+            delta_base_height =  0.0 #1 这个加上的话也会一直上下晃，如果都去掉的话还起得来吗
+            feet_contact_forces_increase = 0.0 #1 这个有的话会一直踏步
             stand_on_feet = 2.5
             orientation = -1
             body_up_exp = 0.25
             feet_height = 2.5
             feet_distance = 0.0 #2
+            stand_still_dof = 5.0   # feet distance reward用这个替代
+
             soft_symmetry_body = 0#-1
             soft_symmetry_waist = 0#-1
             feet_orientation = 0.0#-0.5
@@ -318,7 +320,7 @@ class Go2UPCfgPPO(HumanoidCfgPPO):
         max_iterations = 50001  # number of policy updates
 
         # logging
-        save_interval = 100  # check for potential saves every this many iterations
+        save_interval = 500  # check for potential saves every this many iterations
         experiment_name = "test"
         run_name = ""
         # load and resume
