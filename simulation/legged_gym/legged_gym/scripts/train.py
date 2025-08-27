@@ -87,7 +87,7 @@ if __name__ == "__main__":
     args.task = "go2up"
 
     args.proj_name = f"{args.task}"
-    # args.num_envs = 1
+    # args.num_envs = 2
     args.headless = True
 
     if args.task == "go2roll_track" :

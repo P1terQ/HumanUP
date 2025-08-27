@@ -109,12 +109,16 @@ class Go2UP(Humanoid):
         #     1.7525e-02, -8.6587e-01,  1.0610e-04, -4.5519e-05,  2.4261e-03,
         #     5.6199e-03, -8.3706e-03, -1.0773e-03]).to(sim_device).repeat(self.num_envs, 1)
         self.initial_root_states = torch.tensor([ 
-            8.6570e-03,  5.0515e-04,  0.42, 
-            -9.8234e-03,  4.9986e-01, 1.7525e-02, -8.6587e-01,  
-            1.0610e-04, -4.5519e-05,  2.4261e-03,
-            5.6199e-03, -8.3706e-03, -1.0773e-03]).to(sim_device).repeat(self.num_envs, 1)
-        self.initial_dof_pos = torch.tensor([0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.]).to(sim_device).repeat(self.num_envs, 1)
-        
+            0.0,  0.0,  0.42, 
+            0.0,  0.0,  0.0, 1.0,  
+            0.0,  0.0,  0.0,
+            0.0,  0.0,  0.0]).to(sim_device).repeat(self.num_envs, 1)
+        # self.initial_dof_pos = torch.tensor([0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.]).to(sim_device).repeat(self.num_envs, 1)
+        self.initial_dof_pos = torch.tensor([ 0.1, 0.8, -1.5,
+                                             -0.1, 0.8, -1.5,
+                                              0.1, 1.0, -1.5,
+                                             -0.1, 1.0, -1.5]).to(sim_device).repeat(self.num_envs, 1)
+
         self.left_dof_indices = torch.tensor([0, 1, 2, 3, 4, 5, 15, 16, 17, 18], device=self.device, dtype=torch.long)
         self.right_dof_indices = torch.tensor([6, 7, 8, 9, 10, 11, 19, 20, 21, 22], device=self.device, dtype=torch.long)
         self.waist_indices = torch.tensor([12, 13], device=self.device, dtype=torch.long)
@@ -502,12 +506,15 @@ class Go2UP(Humanoid):
 
         dof_pos = self.default_dof_pos_all.clone()
 
-        if self.standing_init_prob > 0:
-            self._reset_stand_and_lie_states(env_ids, dof_pos=dof_pos)
-        else:
-            # reset robot states
-            self._reset_dofs(env_ids)
-            self._reset_root_states(env_ids)
+        # if self.standing_init_prob > 0:
+        #     self._reset_stand_and_lie_states(env_ids, dof_pos=dof_pos)
+        # else:
+        #     # reset robot states
+        #     self._reset_dofs(env_ids)
+        #     self._reset_root_states(env_ids)
+
+        self._reset_dofs(env_ids)
+        self._reset_root_states(env_ids)
 
         self._resample_commands(env_ids)  # no resample commands
         self.gym.simulate(self.sim)
@@ -840,7 +847,7 @@ class Go2UP(Humanoid):
         )
         return torch.exp(z_rwd) - 1.0
 
-    def _reward_delta_base_height(self):
+    def _reward_delta_base_height(self):    # 鼓励base_height向上
         base_height = self.root_states[:, 2]
         delta_height = base_height - self.last_base_height
         rise_up = delta_height > 0
@@ -862,6 +869,7 @@ class Go2UP(Humanoid):
     def _reward_stand_on_feet(self):
         # reward for standing on both feet
         contact = torch.norm(self.contact_forces[:, self.feet_indices], dim=-1) > 2.0
+        print("feet contact: ", contact)
         stand_on_both = torch.sum(contact, dim=1) == 4#2
         feet_on_ground = self.rigid_body_states[:, self.feet_indices, 2] < 0.1
         feet_on_ground_both = torch.sum(feet_on_ground, dim=1) == 2
